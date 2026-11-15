@@ -1,0 +1,15 @@
+name = "leil-shawarma"
+compatibility_date = "2026-11-01"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = "dist"
+
+# KV bindings are configured in the Cloudflare dashboard (Workers & Pages → Settings →
+# Bindings) as SITE_KV and MEDIA_KV. When you have the namespace IDs you can list them
+# here instead:
+# [[kv_namespaces]]
+# binding = "SITE_KV"
+# id = "<namespace-id>"
+#
+# [[kv_namespaces]]
+# binding = "MEDIA_KV"
+# id = "<namespace-id>"

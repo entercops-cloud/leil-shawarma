@@ -6,3 +6,7 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Local Cloudflare dev state + test build output
+.wrangler/
+.test/
