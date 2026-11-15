@@ -1,0 +1,6 @@
+{
+  "name": "شاورما ليل | Leil Shawarma",
+  "description": "المنيو الرقمي والطلب المباشر لمطعم شاورما ليل - الخليل، خاراس. شاورما دجاج ولحم ووجبات عربي بألذ نكهة وتوصيل سريع.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
