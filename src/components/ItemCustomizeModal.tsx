@@ -17,7 +17,7 @@ export const ItemCustomizeModal: React.FC<ItemCustomizeModalProps> = ({
 }) => {
   // Selected state hooks declared unconditionally
   const [selectedSize, setSelectedSize] = useState<string>('عادي');
-  const [selectedBread, setSelectedBread] = useState<string>('');
+  const [selectedBread, setSelectedBread] = useState<string>('خبز صاج');
   const [selectedExtras, setSelectedExtras] = useState<string[]>([]);
   const [selectedRemovals, setSelectedRemovals] = useState<string[]>([]);
   const [notes, setNotes] = useState<string>('');
@@ -27,7 +27,7 @@ export const ItemCustomizeModal: React.FC<ItemCustomizeModalProps> = ({
   useEffect(() => {
     if (item) {
       setSelectedSize(item.options?.sizes?.[0]?.name || 'عادي');
-      setSelectedBread(item.options?.breads?.[0] || '');
+      setSelectedBread(item.options?.breads?.[0] || 'خبز صاج');
       setSelectedExtras([]);
       setSelectedRemovals([]);
       setNotes('');
@@ -79,10 +79,7 @@ export const ItemCustomizeModal: React.FC<ItemCustomizeModalProps> = ({
   const handleAdd = () => {
     onAddToCart(item, quantity, {
       size: selectedSize,
-      bread:
-        selectedBread && item.options?.breads?.includes(selectedBread)
-          ? selectedBread
-          : undefined,
+      bread: selectedBread,
       extras: selectedExtras,
       removals: selectedRemovals,
       notes: notes.trim(),

@@ -44,7 +44,7 @@ export default function App() {
   const isAdmin = !!currentUser;
   const [customer, setCustomer] = useState<CustomerAccount | null>(null);
   const [customerVerificationAvailable, setCustomerVerificationAvailable] = useState(false);
-  // PIN-based customer accounts are available whenever the owner enables loyalty.
+  // Customer accounts + loyalty need BOTH a phone-verification method on the server and the owner's switch.
   const customerLoginEnabled = customerVerificationAvailable && customization.loyalty.enabled;
   const [pointsToRedeem, setPointsToRedeem] = useState<number>(0);
   const [adminOrders, setAdminOrders] = useState<PlacedOrder[]>([]);
@@ -713,7 +713,7 @@ export default function App() {
       quantity: 1,
       options: {
         size: 'عرض خاص',
-        bread: meal.options?.breads?.[0] || undefined,
+        bread: meal.options?.breads?.[0] || 'خبز صاج',
         extras: [],
         removals: [],
         notes: `طلب عبر ${offer.badge} بخصم ${offer.discountPercentage}%`,
@@ -1146,6 +1146,7 @@ export default function App() {
           onClose={() => setIsSiteCustomizerOpen(false)}
           customization={customization}
           onSaveCustomization={handleSaveCustomization}
+          customerVerificationAvailable={customerVerificationAvailable}
           onResetCustomization={handleResetCustomization}
           onOpenMediaLibrary={() => setIsMediaLibraryOpen(true)}
         />

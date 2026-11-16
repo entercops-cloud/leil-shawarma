@@ -1,4 +1,4 @@
-// Customer accounts: phone and a customer-chosen PIN are checked by the server.
+// Customer accounts: the phone number is verified with a one-time code sent by the server.
 // The session is an HttpOnly cookie, and the loyalty balance lives on the server.
 
 import { api } from './auth';
@@ -21,16 +21,12 @@ export async function fetchCustomer(): Promise<CustomerAccount | null> {
   }
 }
 
-export async function authenticateCustomerWithPin(
-  mode: 'login' | 'register',
-  phone: string,
-  pin: string,
-  name?: string
-): Promise<CustomerAccount> {
-  return (await api<{ customer: CustomerAccount }>('/customer/pin', {
-    method: 'POST',
-    body: { mode, phone, pin, name },
-  })).customer;
+export async function startPhoneVerification(phone: string): Promise<void> {
+  await api('/customer/otp/start', { method: 'POST', body: { phone } });
+}
+
+export async function verifyPhoneCode(phone: string, code: string): Promise<CustomerAccount> {
+  return (await api<{ customer: CustomerAccount }>('/customer/otp/verify', { method: 'POST', body: { phone, code } })).customer;
 }
 
 export async function customerLogout(): Promise<void> {

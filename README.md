@@ -1,16 +1,20 @@
-# شاورما ليل
+<div align="center">
+<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
+</div>
 
-موقع طلبات وإدارة مطعم يعمل على Netlify Functions وNetlify Blobs. راجع [دليل النشر والتشغيل](النشر-على-Netlify.md) لإعداد الموقع.
+# Run and deploy your AI Studio app
 
-## تشغيل محلي
+This contains everything you need to run your app locally.
 
-```bash
-npm install
-npx netlify-cli dev
-```
+View your app in AI Studio: https://ai.studio/apps/dc308f43-eb75-4b73-b5c1-f1a2ea8378db
 
-يتطلب التشغيل المحلي Netlify CLI حتى تعمل واجهة API والتخزين. يمكن بناء ملفات الواجهة وحدها باستخدام `npm run build`.
+## Run Locally
 
-## حسابات الزبائن والنقاط
+**Prerequisites:**  Node.js
 
-يسجّل الزبون باسمه ورقم جواله ويختار PIN من 6 أرقام. تُخزّن بصمة PIN على الخادم، وتُربط النقاط بالطلب عند استخدام رقم الجوال نفسه. لا يحتاج الموقع إلى مزود SMS.
+
+1. Install dependencies:
+   `npm install`
+2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+3. Run the app:
+   `npm run dev`

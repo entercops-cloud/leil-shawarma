@@ -122,7 +122,7 @@ export async function logout(): Promise<void> {
 }
 
 // ---------- public API ----------
-export async function getStatus(): Promise<{ hasUsers: boolean; setupCodeRequired: boolean; verificationAvailable: boolean; customerLoginEnabled: boolean }> {
+export async function getStatus(): Promise<{ hasUsers: boolean; setupEnabled: boolean; verificationAvailable: boolean; customerLoginEnabled: boolean }> {
   return api('/status');
 }
 
@@ -144,7 +144,7 @@ export async function setupFirstOwner(
   username: string,
   displayName: string,
   password: string,
-  setupCode = ''
+  setupCode: string
 ): Promise<{ ok: true; user: AuthUser } | { ok: false; error: string }> {
   const err = validateUsername(username) || validatePassword(password, username);
   if (err) return { ok: false, error: err };
