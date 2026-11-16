@@ -113,10 +113,11 @@ export interface FlashOffer {
   title: string;
   badge: string; // e.g. "عرض محدود 🔥", "خصم خاص ⚡"
   description: string;
-  discountPercentage: number; // e.g. 20 (20%)
+  discountPercentage?: number; // optional, auto-calculated when prices are set
   targetItemId: string; // id of meal in menu
   originalPrice: number;
-  discountedPrice: number;
+  discountedPrice: number; // offer value (manual)
+  savings?: number; // savings value (manual / derived)
   endsAt: string; // ISO string
   isActive: boolean;
   image?: string;
@@ -133,6 +134,8 @@ export interface LoyaltySettings {
   pointsPerShekel: number;     // points earned per 1 ₪ (can be fractional, e.g. 0.5)
   awardOn: 'completed' | 'placed'; // when points are credited
   includeDeliveryFee: boolean; // count the delivery fee when calculating points
+  redeemPoints: number;        // points required for one redemption discount
+  redeemDiscount: number;      // discount value (₪) when redeeming redeemPoints
 }
 
 export interface SiteCustomization {

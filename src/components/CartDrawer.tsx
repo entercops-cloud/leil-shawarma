@@ -41,8 +41,11 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const isMinOrderMet = subtotal >= minOrder;
   const remainingForMin = Math.max(0, minOrder - subtotal);
 
-  // Discount from points: 50 points = 5 ₪ discount
-  const discountAmount = pointsToRedeem === 50 ? 5 : pointsToRedeem === 100 ? 12 : 0;
+  // Discount from points (configurable)
+  const redeemPointsReq = Math.max(1, Math.round(loyalty.redeemPoints || 50));
+  const redeemDiscountVal = Math.max(0, Number(loyalty.redeemDiscount ?? 5));
+  const canRedeem = !!loyaltyAccount && loyaltyAccount.points >= redeemPointsReq && redeemDiscountVal > 0;
+  const discountAmount = pointsToRedeem > 0 && pointsToRedeem === redeemPointsReq ? redeemDiscountVal : 0;
   const finalSubtotal = Math.max(0, subtotal - discountAmount);
 
   const tierColors = {
@@ -125,33 +128,33 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               </div>
 
               {/* Redemption Options */}
-              {loyaltyAccount.points >= 50 ? (
+              {canRedeem ? (
                 <div className="mt-2.5 pt-2 border-t border-amber-200/80 flex items-center justify-between text-xs">
                   <span className="text-[11px] text-stone-700">
-                    يمكنك استبدال 50 نقطة بخصم 5 ₪ فوري!
+                    يمكنك استبدال {redeemPointsReq} نقطة بخصم {redeemDiscountVal} ₪ فوري!
                   </span>
                   <button
                     type="button"
-                    onClick={() => onToggleRedeemPoints(pointsToRedeem === 50 ? 0 : 50)}
+                    onClick={() => onToggleRedeemPoints(pointsToRedeem === redeemPointsReq ? 0 : redeemPointsReq)}
                     className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
-                      pointsToRedeem === 50
+                      pointsToRedeem === redeemPointsReq
                         ? 'bg-emerald-600 text-white shadow-xs'
                         : 'bg-white border border-amber-400 text-amber-900 hover:bg-amber-100'
                     }`}
                   >
-                    {pointsToRedeem === 50 ? (
+                    {pointsToRedeem === redeemPointsReq ? (
                       <>
                         <Check className="w-3.5 h-3.5 stroke-[3]" />
-                        <span>تم تطبيق خصم 5 ₪</span>
+                        <span>تم تطبيق خصم {redeemDiscountVal} ₪</span>
                       </>
                     ) : (
-                      <span>استبدل الآن (-5 ₪)</span>
+                      <span>استبدل الآن (-{redeemDiscountVal} ₪)</span>
                     )}
                   </button>
                 </div>
               ) : (
                 <div className="mt-2 text-[11px] text-stone-500">
-                  <span>تبقى لك {50 - loyaltyAccount.points} نقطة للحصول على خصم 5 ₪ مجاني. {loyalty.enabled ? (loyalty.pointsPerShekel === 1 ? 'تكسب نقطة مع كل 1 ₪ بعد اكتمال طلبك.' : `تكسب ${loyalty.pointsPerShekel} نقطة مع كل 1 ₪ بعد اكتمال طلبك.`) : ''}</span>
+                  <span>تبقى لك {Math.max(0, redeemPointsReq - loyaltyAccount.points)} نقطة للحصول على خصم {redeemDiscountVal} ₪. {loyalty.enabled ? (loyalty.pointsPerShekel === 1 ? 'تكسب نقطة مع كل 1 ₪ بعد اكتمال طلبك.' : `تكسب ${loyalty.pointsPerShekel} نقطة مع كل 1 ₪ بعد اكتمال طلبك.`) : ''}</span>
                 </div>
               )}
             </div>

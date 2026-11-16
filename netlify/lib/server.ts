@@ -304,6 +304,10 @@ async function rateLimit(d: Deps, key: string, max: number, windowMs: number): P
 interface LoyaltySettings {
   enabled?: boolean;
   awardOn?: 'completed' | 'placed';
+  pointsPerShekel?: number;
+  includeDeliveryFee?: boolean;
+  redeemPoints?: number;
+  redeemDiscount?: number;
 }
 
 /** Credits points on completion (once) and reverses / refunds on cancellation. Mutates order + customer. */
@@ -697,13 +701,15 @@ async function route(req: Request, d: Deps, out: Out): Promise<Response> {
     const account = await getCustomer();
     const orderPhone = normalizePhone(phoneRaw);
     const linked = !!account && !!orderPhone && account.phone === orderPhone;
+    const redeemPoints = Math.max(1, Math.round(Number(loy.redeemPoints) || 50));
+    const redeemDiscountVal = Math.max(0, Number(loy.redeemDiscount) || 0);
     const redeemed = Number(body?.pointsRedeemed) || 0;
-    if (redeemed !== 0 && redeemed !== 50 && redeemed !== 100) return err(400, 'عدد النقاط غير صالح.');
+    if (redeemed !== 0 && redeemed !== redeemPoints) return err(400, 'عدد النقاط غير صالح.');
     if (redeemed > 0) {
       if (!linked) return err(400, 'سجّل الدخول برقم جوالك لاستخدام نقاط الولاء.');
       if (account!.points < redeemed) return err(400, 'رصيد النقاط غير كافٍ.');
     }
-    const pointsDiscount = redeemed === 50 ? 5 : redeemed === 100 ? 12 : 0;
+    const pointsDiscount = redeemed > 0 ? redeemDiscountVal : 0;
     const discount = Math.min(pointsDiscount, priced.subtotal);
     const afterDiscount = Math.max(0, priced.subtotal - discount);
     const total = Math.round((afterDiscount + deliveryFee) * 100) / 100;
@@ -933,9 +939,15 @@ async function route(req: Request, d: Deps, out: Out): Promise<Response> {
   // ----- customers & loyalty balance (staff) -----
   if (path === '/customers') {
     const phone = normalizePhone(url.searchParams.get('phone'));
-    if (!phone) return err(400, 'أدخل رقم جوال فلسطيني صحيح.');
-    const c = await loadCustomer(d, phone);
-    return json({ customer: c ? publicCustomer(c) : null });
+    if (phone) {
+      const c = await loadCustomer(d, phone);
+      return json({ customer: c ? publicCustomer(c) : null });
+    }
+    // list all registered customers
+    const keys = (await d.site.list('cust:')).sort().reverse().slice(0, 500);
+    const rows = await Promise.all(keys.map((k) => d.site.getJSON<CustomerRec>(k)));
+    const customers = rows.filter(Boolean).map((c) => publicCustomer(c as CustomerRec));
+    return json({ customers });
   }
   const custMatch = /^\/customers\/(97[02]\d{9})$/.exec(path);
   if (method === 'PATCH' && custMatch) {

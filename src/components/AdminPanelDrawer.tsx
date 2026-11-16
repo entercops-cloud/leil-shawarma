@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { UsersPanel } from './UsersPanel';
 import type { AuthUser } from '../utils/auth';
+import { listCustomers, setCustomerPoints } from '../utils/serverData';
+import type { CustomerAccount } from '../utils/customerAuth';
 import {
   X,
   Plus,
@@ -46,6 +48,8 @@ import {
   Layout,
   Save,
   Phone,
+  Users,
+  Award,
 } from 'lucide-react';
 import { MenuItem, Review, Category, PlacedOrder, FlashOffer, OrderStatus, SiteCustomization } from '../types';
 import { orderAlertManager } from '../utils/audio';
@@ -123,7 +127,7 @@ interface AdminPanelDrawerProps {
   customization?: SiteCustomization;
   onSaveCustomization?: (newCustomization: SiteCustomization) => void;
   currentUser?: AuthUser | null;
-  initialTab?: 'items' | 'offers' | 'reviews' | 'orders' | 'analytics' | 'customization' | 'users';
+  initialTab?: 'items' | 'offers' | 'reviews' | 'orders' | 'analytics' | 'customization' | 'users' | 'customers';
 }
 
 export const AdminPanelDrawer: React.FC<AdminPanelDrawerProps> = ({
@@ -153,8 +157,35 @@ export const AdminPanelDrawer: React.FC<AdminPanelDrawerProps> = ({
   currentUser,
   initialTab,
 }) => {
-  const [activeTab, setActiveTab] = useState<'items' | 'offers' | 'reviews' | 'orders' | 'analytics' | 'customization' | 'users'>(initialTab ?? 'items');
+  const [activeTab, setActiveTab] = useState<'items' | 'offers' | 'reviews' | 'orders' | 'analytics' | 'customization' | 'users' | 'customers'>(initialTab ?? 'items');
   const [orderFilter, setOrderFilter] = useState<'all' | 'delayed' | 'active' | 'completed'>('all');
+  const [customers, setCustomers] = useState<CustomerAccount[]>([]);
+  const [customersLoading, setCustomersLoading] = useState(false);
+  const [customerPointsDraft, setCustomerPointsDraft] = useState<Record<string, string>>({});
+  const [customerMsg, setCustomerMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => {
+    if (!isOpen || activeTab !== 'customers') return;
+    let cancelled = false;
+    setCustomersLoading(true);
+    setCustomerMsg(null);
+    listCustomers()
+      .then((rows) => {
+        if (!cancelled) {
+          setCustomers(rows);
+          setCustomerPointsDraft(Object.fromEntries(rows.map((r) => [r.phone, String(r.points)])));
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) setCustomerMsg({ ok: false, text: e instanceof Error ? e.message : 'تعذر تحميل الزبائن.' });
+      })
+      .finally(() => {
+        if (!cancelled) setCustomersLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, activeTab]);
   const [editingReviewId, setEditingReviewId] = useState<string | null>(null);
   const [editRating, setEditRating] = useState<number>(5);
   const [editComment, setEditComment] = useState<string>('');
@@ -277,7 +308,17 @@ export const AdminPanelDrawer: React.FC<AdminPanelDrawerProps> = ({
   // New Flash Offer form state
   const [isAddingOffer, setIsAddingOffer] = useState(false);
   const [offerMealId, setOfferMealId] = useState(menuItems[0]?.id || '');
-  const [offerDiscount, setOfferDiscount] = useState<number>(20);
+  const [offerDiscountedPrice, setOfferDiscountedPrice] = useState<number>(0);
+  const [offerSavings, setOfferSavings] = useState<number>(0);
+  const [offerDiscountPct, setOfferDiscountPct] = useState<number>(0);
+
+  const initOfferPricingForMeal = (mealId: string) => {
+    const m = menuItems.find((item) => item.id === mealId) || menuItems[0];
+    if (!m) return;
+    setOfferDiscountedPrice(m.price);
+    setOfferSavings(0);
+    setOfferDiscountPct(0);
+  };
   const [offerBadge, setOfferBadge] = useState('عرض البرق ⚡');
   const [offerHours, setOfferHours] = useState<number>(6);
   const [offerCustomTitle, setOfferCustomTitle] = useState('');
@@ -471,13 +512,21 @@ export const AdminPanelDrawer: React.FC<AdminPanelDrawerProps> = ({
     onUpdateFlashOffers(updated);
   };
 
-  const handleUpdateDiscount = (offerId: string, discount: number) => {
+  const handleUpdateOfferPricing = (offerId: string, field: 'discountedPrice' | 'savings', value: number) => {
     const updated = flashOffers.map((o) => {
-      if (o.id === offerId) {
-        const discountedPrice = Math.max(1, Math.round(o.originalPrice * (1 - discount / 100)));
-        return { ...o, discountPercentage: discount, discountedPrice };
+      if (o.id !== offerId) return o;
+      const orig = Math.max(0, o.originalPrice);
+      let discounted = o.discountedPrice;
+      let savings = o.savings ?? Math.max(0, orig - o.discountedPrice);
+      if (field === 'discountedPrice') {
+        discounted = Math.min(Math.max(0, value), orig);
+        savings = Math.max(0, Math.round((orig - discounted) * 100) / 100);
+      } else {
+        savings = Math.min(Math.max(0, value), orig);
+        discounted = Math.max(0, Math.round((orig - savings) * 100) / 100);
       }
-      return o;
+      const pct = orig > 0 ? Math.round((savings / orig) * 100) : undefined;
+      return { ...o, discountedPrice: discounted, savings, discountPercentage: pct };
     });
     onUpdateFlashOffers(updated);
   };
@@ -504,17 +553,25 @@ export const AdminPanelDrawer: React.FC<AdminPanelDrawerProps> = ({
     if (!meal) return;
 
     const originalPrice = meal.price;
-    const discountedPrice = Math.max(1, Math.round(originalPrice * (1 - offerDiscount / 100)));
+    let discountedPrice = Math.min(Math.max(0, Number(offerDiscountedPrice) || 0), originalPrice);
+    let savings = Math.min(Math.max(0, Number(offerSavings) || 0), originalPrice);
+    // if user set savings but not price (or vice versa), sync
+    if (savings > 0 && discountedPrice === 0) discountedPrice = Math.max(0, originalPrice - savings);
+    if (discountedPrice > 0 && savings === 0) savings = Math.max(0, originalPrice - discountedPrice);
+    discountedPrice = Math.min(discountedPrice, originalPrice);
+    savings = Math.max(0, Math.round((originalPrice - discountedPrice) * 100) / 100);
+    const pct = originalPrice > 0 ? Math.round((savings / originalPrice) * 100) : undefined;
 
     const newOffer: FlashOffer = {
       id: `offer-${Date.now()}`,
-      title: offerCustomTitle.trim() || `عرض خاص: ${meal.name} بخصم ${offerDiscount}%`,
-      badge: offerBadge.trim() || 'عرض البرق ⚡',
+      title: offerCustomTitle.trim() || `عرض: ${meal.name}`,
+      badge: offerBadge.trim() || 'عرض خاص ⚡',
       description: meal.description,
-      discountPercentage: offerDiscount,
+      discountPercentage: pct,
       targetItemId: meal.id,
       originalPrice,
       discountedPrice,
+      savings,
       endsAt: new Date(Date.now() + offerHours * 3600 * 1000).toISOString(),
       isActive: true,
       image: meal.image,
@@ -523,6 +580,9 @@ export const AdminPanelDrawer: React.FC<AdminPanelDrawerProps> = ({
     onUpdateFlashOffers([newOffer, ...flashOffers]);
     setIsAddingOffer(false);
     setOfferCustomTitle('');
+    setOfferDiscountedPrice(0);
+    setOfferSavings(0);
+    setOfferDiscountPct(0);
   };
 
   return (
@@ -732,6 +792,18 @@ export const AdminPanelDrawer: React.FC<AdminPanelDrawerProps> = ({
                 <span>المستخدمون</span>
               </button>
             )}
+            <button
+              onClick={() => setActiveTab('customers')}
+              className={`flex-1 py-2 px-2 rounded-xl font-bold flex items-center justify-center gap-1.5 whitespace-nowrap transition-all ${
+                activeTab === 'customers'
+                  ? 'bg-[#0B192C] text-white shadow-xs'
+                  : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>الزبائن</span>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-mono ${activeTab === 'customers' ? 'bg-white/20' : 'bg-stone-200 text-stone-700'}`}>{customers.length}</span>
+            </button>
           </div>
 
           {/* URGENT DELAYED ORDERS BANNER (>20 MINUTES) */}
@@ -762,6 +834,92 @@ export const AdminPanelDrawer: React.FC<AdminPanelDrawerProps> = ({
           {/* Body Content */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs">
             {activeTab === 'users' && currentUser?.role === 'owner' && <UsersPanel currentUser={currentUser} />}
+
+            {activeTab === 'customers' && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <h3 className="font-bold text-stone-900 text-sm flex items-center gap-1.5"><Award className="w-4 h-4 text-amber-600" /> الزبائن المسجلون ونقاط الولاء</h3>
+                    <p className="text-[11px] text-stone-500">عرض الزبائن المسجلين، رصيد نقاط الولاء، والتحكم بعدد النقاط لكل زبون.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab('customers'); }}
+                    className="px-2.5 py-1.5 bg-stone-100 hover:bg-stone-200 rounded-xl text-[11px] font-bold flex items-center gap-1"
+                    title="تحديث"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${customersLoading ? 'animate-spin' : ''}`} />
+                    تحديث
+                  </button>
+                </div>
+
+                {customerMsg && (
+                  <div className={`p-2.5 rounded-xl border text-xs font-semibold ${customerMsg.ok ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-700'}`}>
+                    {customerMsg.text}
+                  </div>
+                )}
+
+                {customersLoading ? (
+                  <div className="p-8 text-center bg-stone-50 rounded-2xl text-stone-500">جاري تحميل الزبائن...</div>
+                ) : customers.length === 0 ? (
+                  <div className="p-8 text-center bg-stone-50 rounded-2xl text-stone-500 space-y-1">
+                    <Users className="w-8 h-8 mx-auto text-stone-300" />
+                    <p className="font-bold">لا يوجد زبائن مسجلون بعد</p>
+                    <p className="text-[11px]">سيظهر الزبائن هنا بعد تسجيلهم بحساباتهم.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {customers.map((c) => {
+                      const localPhone = c.phone.startsWith('970') ? '0' + c.phone.slice(3) : '+' + c.phone;
+                      const draft = customerPointsDraft[c.phone] ?? String(c.points);
+                      return (
+                        <div key={c.phone} className="p-3 bg-white rounded-2xl border border-stone-200 space-y-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="font-bold text-stone-900 truncate">{c.name || 'زبون'}</div>
+                              <div className="text-[11px] text-stone-500 font-mono" dir="ltr">{localPhone}</div>
+                              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
+                                <span className="bg-amber-50 text-amber-900 border border-amber-200 px-2 py-0.5 rounded-lg font-bold">النقاط: {c.points}</span>
+                                <span className="bg-stone-100 text-stone-700 px-2 py-0.5 rounded-lg">المستوى: {c.tier}</span>
+                                <span className="bg-stone-100 text-stone-700 px-2 py-0.5 rounded-lg">الطلبات: {c.ordersCount}</span>
+                                <span className="bg-stone-100 text-stone-700 px-2 py-0.5 rounded-lg">الإنفاق: {Math.round(c.totalSpent)} ₪</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 pt-2 border-t border-stone-100">
+                            <label className="text-[11px] font-semibold text-stone-700 whitespace-nowrap">تعديل النقاط:</label>
+                            <input
+                              type="number"
+                              min={0}
+                              value={draft}
+                              onChange={(e) => setCustomerPointsDraft((prev) => ({ ...prev, [c.phone]: e.target.value }))}
+                              className="w-28 px-2 py-1.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-mono"
+                            />
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  const pts = Math.max(0, Math.round(Number(customerPointsDraft[c.phone] ?? c.points) || 0));
+                                  const updated = await setCustomerPoints(c.phone, pts);
+                                  setCustomers((prev) => prev.map((x) => x.phone === c.phone ? updated : x));
+                                  setCustomerPointsDraft((prev) => ({ ...prev, [c.phone]: String(updated.points) }));
+                                  setCustomerMsg({ ok: true, text: `تم تحديث نقاط ${updated.name || localPhone}.` });
+                                } catch (e) {
+                                  setCustomerMsg({ ok: false, text: e instanceof Error ? e.message : 'تعذر تحديث النقاط.' });
+                                }
+                              }}
+                              className="px-3 py-1.5 bg-stone-900 text-white rounded-xl font-bold text-[11px]"
+                            >
+                              حفظ
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
 
             {activeTab === 'items' && (
               <div className="space-y-3">
@@ -976,7 +1134,17 @@ export const AdminPanelDrawer: React.FC<AdminPanelDrawerProps> = ({
                   </div>
                   <button
                     type="button"
-                    onClick={() => setIsAddingOffer(!isAddingOffer)}
+                    onClick={() => {
+                      const next = !isAddingOffer;
+                      setIsAddingOffer(next);
+                      if (next) {
+                        const m = menuItems.find((item) => item.id === offerMealId) || menuItems[0];
+                        if (m) {
+                          setOfferCustomTitle((t) => t || `عرض: ${m.name}`);
+                          initOfferPricingForMeal(m.id);
+                        }
+                      }
+                    }}
                     className="bg-[#E61C24] hover:bg-[#cf151c] text-white px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-all shadow-xs"
                   >
                     <Plus className="w-3.5 h-3.5" />
@@ -1003,9 +1171,13 @@ export const AdminPanelDrawer: React.FC<AdminPanelDrawerProps> = ({
                       <select
                         value={offerMealId}
                         onChange={(e) => {
-                          setOfferMealId(e.target.value);
-                          const m = menuItems.find((item) => item.id === e.target.value);
-                          if (m) setOfferCustomTitle(`عرض خاص: ${m.name}`);
+                          const id = e.target.value;
+                          setOfferMealId(id);
+                          const mm = menuItems.find((item) => item.id === id);
+                          if (mm) {
+                            setOfferCustomTitle(`عرض: ${mm.name}`);
+                            initOfferPricingForMeal(id);
+                          }
                         }}
                         className="w-full px-3 py-2 bg-white border border-stone-200 rounded-xl text-xs font-bold"
                       >
@@ -1054,30 +1226,27 @@ export const AdminPanelDrawer: React.FC<AdminPanelDrawerProps> = ({
                       </div>
                     </div>
 
-                    {/* Discount % Slider */}
-                    <div className="p-3 bg-white rounded-xl border border-stone-200 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <label className="font-bold text-stone-800 text-[11px]">نسبة الخصم:</label>
-                        <span className="font-mono font-black text-red-600 text-sm">
-                          {offerDiscount}% خصم
-                        </span>
+                    {/* التسعير اليدوي */}
+                    <div className="p-3 bg-white rounded-xl border border-stone-200 space-y-3">
+                      <div className="text-[11px] text-stone-600">
+                        السعر الأصلي: <span className="font-mono font-bold text-stone-900">{(menuItems.find(m=>m.id===offerMealId)||menuItems[0])?.price ?? 0} ₪</span>
+                        {(() => { const orig=(menuItems.find(m=>m.id===offerMealId)||menuItems[0])?.price ?? 0; const sv = Math.max(0, Number(offerSavings)|| (orig - (Number(offerDiscountedPrice)||0))); const pct = orig>0?Math.round((sv/orig)*100):0; return pct>0 ? <span className="mr-2 text-emerald-700 font-semibold">(نسبة تقديرية: {pct}% — اختيارية)</span> : null; })()}
                       </div>
-                      <input
-                        type="range"
-                        min="5"
-                        max="60"
-                        step="5"
-                        value={offerDiscount}
-                        onChange={(e) => setOfferDiscount(Number(e.target.value))}
-                        className="w-full accent-red-600"
-                      />
-                      <div className="flex justify-between text-[10px] text-stone-400 font-mono">
-                        <span>5%</span>
-                        <span>20%</span>
-                        <span>35%</span>
-                        <span>50%</span>
-                        <span>60%</span>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-stone-700 block mb-1 font-bold text-[11px]">قيمة العرض (السعر بعد الخصم) ₪</label>
+                          <input type="number" min={0} step="0.5" value={offerDiscountedPrice || ''}
+                            onChange={(e) => { const orig = (menuItems.find(m=>m.id===offerMealId)||menuItems[0])?.price ?? 0; const v = Number(e.target.value) || 0; const d = Math.min(Math.max(0,v), orig); const sv = Math.max(0, Math.round((orig - d)*100)/100); setOfferDiscountedPrice(d); setOfferSavings(sv); setOfferDiscountPct(orig>0?Math.round((sv/orig)*100):0); }}
+                            className="w-full px-3 py-2 bg-white border border-stone-200 rounded-xl text-xs font-mono" placeholder="مثال: 17" />
+                        </div>
+                        <div>
+                          <label className="text-stone-700 block mb-1 font-bold text-[11px]">قيمة التوفير ₪</label>
+                          <input type="number" min={0} step="0.5" value={offerSavings || ''}
+                            onChange={(e) => { const orig = (menuItems.find(m=>m.id===offerMealId)||menuItems[0])?.price ?? 0; const v = Number(e.target.value) || 0; const sv = Math.min(Math.max(0,v), orig); const d = Math.max(0, Math.round((orig - sv)*100)/100); setOfferSavings(sv); setOfferDiscountedPrice(d); setOfferDiscountPct(orig>0?Math.round((sv/orig)*100):0); }}
+                            className="w-full px-3 py-2 bg-white border border-stone-200 rounded-xl text-xs font-mono" placeholder="مثال: 3" />
+                        </div>
                       </div>
+                      <p className="text-[10px] text-stone-500">أدخل قيمة العرض أو قيمة التوفير يدوياً (النسبة اختيارية وتُحسب تلقائياً).</p>
                     </div>
 
                     <button
@@ -1162,22 +1331,23 @@ export const AdminPanelDrawer: React.FC<AdminPanelDrawerProps> = ({
 
                           {/* Controls: Discount % quick adjustment */}
                           <div className="pt-2 border-t border-stone-100 flex flex-wrap items-center justify-between gap-2 text-[11px]">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-stone-500 font-bold">تغيير الخصم:</span>
-                              {[10, 15, 20, 25, 30, 40].map((pct) => (
-                                <button
-                                  key={pct}
-                                  type="button"
-                                  onClick={() => handleUpdateDiscount(offer.id, pct)}
-                                  className={`px-2 py-0.5 rounded-md font-mono font-bold transition-colors ${
-                                    offer.discountPercentage === pct
-                                      ? 'bg-red-600 text-white'
-                                      : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
-                                  }`}
-                                >
-                                  {pct}%
-                                </button>
-                              ))}
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-stone-500 font-bold">السعر/التوفير:</span>
+                              <label className="flex items-center gap-1 text-[10px]">
+                                <span className="text-stone-500">قيمة العرض</span>
+                                <input type="number" min={0} step="0.5" value={offer.discountedPrice}
+                                  onChange={(e)=>handleUpdateOfferPricing(offer.id,'discountedPrice', Number(e.target.value)||0)}
+                                  className="w-20 px-2 py-1 border border-stone-200 rounded-lg font-mono text-[11px]" />
+                                <span>₪</span>
+                              </label>
+                              <label className="flex items-center gap-1 text-[10px]">
+                                <span className="text-stone-500">التوفير</span>
+                                <input type="number" min={0} step="0.5" value={offer.savings ?? Math.max(0, offer.originalPrice - offer.discountedPrice)}
+                                  onChange={(e)=>handleUpdateOfferPricing(offer.id,'savings', Number(e.target.value)||0)}
+                                  className="w-20 px-2 py-1 border border-stone-200 rounded-lg font-mono text-[11px]" />
+                                <span>₪</span>
+                              </label>
+                              {typeof offer.discountPercentage === 'number' && <span className="text-[10px] text-emerald-700 font-semibold">({offer.discountPercentage}%)</span>}
                             </div>
 
                             <div className="flex items-center gap-1">

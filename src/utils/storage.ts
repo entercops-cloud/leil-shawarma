@@ -102,6 +102,8 @@ export const DEFAULT_SITE_CUSTOMIZATION: SiteCustomization = {
     pointsPerShekel: 1,
     awardOn: 'completed',
     includeDeliveryFee: false,
+    redeemPoints: 50,
+    redeemDiscount: 5,
   },
   ordering: {
     minOrder: 0, // طلب مفتوح: بدون حد أدنى
@@ -149,7 +151,12 @@ export function normalizeCustomization(parsed: any): SiteCustomization {
     texts: { ...DEFAULT_SITE_CUSTOMIZATION.texts, ...(parsed.texts || {}) },
     sectionsVisibility: (({ showBlueprintButton: _legacy, ...rest }) => rest)({ ...DEFAULT_SITE_CUSTOMIZATION.sectionsVisibility, ...(parsed.sectionsVisibility || {}) }) as SiteCustomization['sectionsVisibility'],
     payments: { ...DEFAULT_SITE_CUSTOMIZATION.payments, ...(parsed.payments || {}) },
-    loyalty: { ...DEFAULT_SITE_CUSTOMIZATION.loyalty, ...(parsed.loyalty || {}) },
+    loyalty: {
+      ...DEFAULT_SITE_CUSTOMIZATION.loyalty,
+      ...(parsed.loyalty || {}),
+      redeemPoints: Math.max(1, Math.round(Number(parsed.loyalty?.redeemPoints ?? DEFAULT_SITE_CUSTOMIZATION.loyalty.redeemPoints) || DEFAULT_SITE_CUSTOMIZATION.loyalty.redeemPoints)),
+      redeemDiscount: Math.max(0, Number(parsed.loyalty?.redeemDiscount ?? DEFAULT_SITE_CUSTOMIZATION.loyalty.redeemDiscount) || 0),
+    },
     ordering: {
       minOrder: Number.isFinite(parsed.ordering?.minOrder) ? Math.max(0, parsed.ordering.minOrder) : DEFAULT_SITE_CUSTOMIZATION.ordering.minOrder,
       deliveryRegions:
@@ -171,6 +178,7 @@ export const DEFAULT_FLASH_OFFERS: FlashOffer[] = [
     targetItemId: 'chk-arabi',
     originalPrice: 20,
     discountedPrice: 17,
+    savings: 3,
     endsAt: new Date(Date.now() + 6 * 3600 * 1000).toISOString(),
     isActive: true,
     image: arabiMealImg,
@@ -184,6 +192,7 @@ export const DEFAULT_FLASH_OFFERS: FlashOffer[] = [
     targetItemId: 'leil-box',
     originalPrice: 80,
     discountedPrice: 69,
+    savings: 11,
     endsAt: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
     isActive: true,
     image: familyBoxImg,

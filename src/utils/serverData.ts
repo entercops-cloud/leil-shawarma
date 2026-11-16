@@ -61,6 +61,10 @@ export async function lookupCustomer(phone: string): Promise<CustomerAccount | n
   return (await api<{ customer: CustomerAccount | null }>(`/customers?phone=${encodeURIComponent(phone)}`, { auth: true })).customer;
 }
 
+export async function listCustomers(): Promise<CustomerAccount[]> {
+  return (await api<{ customers: CustomerAccount[] }>('/customers', { auth: true })).customers;
+}
+
 export async function setCustomerPoints(phoneDigits: string, points: number): Promise<CustomerAccount> {
   return (await api<{ customer: CustomerAccount }>(`/customers/${phoneDigits}`, { method: 'PATCH', auth: true, body: { points } })).customer;
 }

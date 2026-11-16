@@ -1566,6 +1566,32 @@ export const SiteCustomizerModal: React.FC<SiteCustomizerModalProps> = ({
                     <input type="checkbox" checked={formState.loyalty.includeDeliveryFee} onChange={(e) => setFormState((prev) => ({ ...prev, loyalty: { ...prev.loyalty, includeDeliveryFee: e.target.checked } }))} className="w-4 h-4 accent-red-600" />
                     <span>احتساب رسوم التوصيل ضمن النقاط</span>
                   </label>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-stone-200">
+                    <div>
+                      <label className="text-stone-700 block mb-1 font-semibold">عدد النقاط المطلوبة للاستبدال:</label>
+                      <input
+                        type="number"
+                        min={1}
+                        step={1}
+                        value={formState.loyalty.redeemPoints}
+                        onChange={(e) => setFormState((prev) => ({ ...prev, loyalty: { ...prev.loyalty, redeemPoints: Math.max(1, Math.round(Number(e.target.value) || 1)) } }))}
+                        className="w-full px-3 py-2 bg-white border border-stone-200 rounded-xl text-xs font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-stone-700 block mb-1 font-semibold">قيمة الخصم عند الاستبدال (₪):</label>
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.5}
+                        value={formState.loyalty.redeemDiscount}
+                        onChange={(e) => setFormState((prev) => ({ ...prev, loyalty: { ...prev.loyalty, redeemDiscount: Math.max(0, Number(e.target.value) || 0) } }))}
+                        className="w-full px-3 py-2 bg-white border border-stone-200 rounded-xl text-xs font-mono"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-stone-500">مثال: 50 نقطة = خصم 5 ₪ (يمكنك التحكم بالعدد والقيمة).</p>
                   </div>
                 </div>
 

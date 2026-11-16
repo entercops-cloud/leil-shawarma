@@ -351,7 +351,7 @@ export default function App() {
   }, [cart]);
 
   // Points discount calculation
-  const pointsDiscount = customer ? (pointsToRedeem === 50 ? 5 : pointsToRedeem === 100 ? 12 : 0) : 0;
+  const pointsDiscount = customer && pointsToRedeem > 0 && pointsToRedeem === (customization.loyalty.redeemPoints || 50) ? (customization.loyalty.redeemDiscount ?? 5) : 0;
   const cartFinalTotal = Math.max(0, subtotalPrice - pointsDiscount);
 
   // Toggle points redemption in cart
@@ -716,7 +716,7 @@ export default function App() {
         bread: meal.options?.breads?.[0] || undefined,
         extras: [],
         removals: [],
-        notes: `طلب عبر ${offer.badge} بخصم ${offer.discountPercentage}%`,
+        notes: `طلب عبر ${offer.badge}${typeof offer.discountPercentage === 'number' ? ` بخصم ${offer.discountPercentage}%` : ` (توفير ${Math.max(0, offer.savings ?? (offer.originalPrice - offer.discountedPrice))} ₪)`}`,
         unitPrice: offer.discountedPrice,
       },
       totalPrice: offer.discountedPrice,

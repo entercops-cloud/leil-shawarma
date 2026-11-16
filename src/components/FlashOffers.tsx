@@ -126,9 +126,11 @@ export const FlashOffers: React.FC<FlashOffersProps> = ({
               <div className="flex items-center justify-between gap-2 mb-3">
                 <div className="flex items-center gap-1.5 bg-red-700 text-white text-xs font-bold px-2.5 py-1 rounded-lg shadow-2xs">
                   <span>{offer.badge}</span>
-                  <span className="bg-white/20 px-1 py-0.2 rounded font-mono text-[10px]">
-                    -{offer.discountPercentage}%
-                  </span>
+                  {typeof offer.discountPercentage === 'number' && offer.discountPercentage > 0 && (
+                    <span className="bg-white/20 px-1 py-0.2 rounded font-mono text-[10px]">
+                      -{offer.discountPercentage}%
+                    </span>
+                  )}
                 </div>
 
                 {/* Countdown Timer */}
@@ -168,7 +170,7 @@ export const FlashOffers: React.FC<FlashOffersProps> = ({
                       {offer.originalPrice} ₪
                     </span>
                     <span className="text-[11px] text-emerald-700 font-semibold">
-                      (توفير {offer.originalPrice - offer.discountedPrice} ₪)
+                      (توفير {Math.max(0, (offer.savings ?? (offer.originalPrice - offer.discountedPrice)))} ₪)
                     </span>
                   </div>
                 </div>
