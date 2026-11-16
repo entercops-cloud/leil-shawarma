@@ -1,11 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { X, Phone, KeyRound, LogOut, Award, Search, RefreshCw, ShoppingBag, CheckCircle2 } from 'lucide-react';
+import { X, Phone, KeyRound, LogOut, Award, Search, RefreshCw, ShoppingBag, User } from 'lucide-react';
 import type { CartItem, PlacedOrder } from '../types';
 import {
   CustomerAccount,
   OrderLookup,
-  startPhoneVerification,
-  verifyPhoneCode,
+  authenticateCustomerWithPin,
   customerLogout,
   fetchMyOrders,
   lookupOrder,
@@ -30,6 +29,9 @@ const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
 };
 
 const inputCls = 'w-full text-xs px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl font-mono focus:outline-none focus:border-red-600 focus:bg-white';
+const toAsciiDigits = (value: string) => value
+  .replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 0x0660))
+  .replace(/[۰-۹]/g, (digit) => String(digit.charCodeAt(0) - 0x06f0));
 
 export const CustomerAccountModal: React.FC<Props> = ({
   isOpen,
@@ -42,8 +44,10 @@ export const CustomerAccountModal: React.FC<Props> = ({
   initialPhone = '',
 }) => {
   const [phone, setPhone] = useState(initialPhone);
-  const [code, setCode] = useState('');
-  const [codeSent, setCodeSent] = useState(false);
+  const [name, setName] = useState('');
+  const [pin, setPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [orders, setOrders] = useState<PlacedOrder[]>([]);
@@ -87,19 +91,16 @@ export const CustomerAccountModal: React.FC<Props> = ({
     }
   };
 
-  const sendCode = () =>
+  const authenticate = () =>
     run(async () => {
-      await startPhoneVerification(phone);
-      setCodeSent(true);
-      setMsg({ ok: true, text: 'أرسلنا رمز التحقق إلى جوالك.' });
-    });
-
-  const verify = () =>
-    run(async () => {
-      const c = await verifyPhoneCode(phone, code);
+      if (authMode === 'register' && pin !== confirmPin) {
+        setMsg({ ok: false, text: 'رقما PIN غير متطابقين.' });
+        return;
+      }
+      const c = await authenticateCustomerWithPin(authMode, phone, pin, name);
       onCustomerChange(c);
-      setCode('');
-      setCodeSent(false);
+      setPin('');
+      setConfirmPin('');
     });
 
   const track = () =>
@@ -136,6 +137,7 @@ export const CustomerAccountModal: React.FC<Props> = ({
                     <Award className="w-5 h-5" />
                   </div>
                   <div>
+                    {customer.name && <div className="text-[11px] font-bold text-stone-700">{customer.name}</div>}
                     <div className="font-black text-amber-950 text-sm">
                       <span className="font-mono tabular-nums">{customer.points}</span> نقطة · مستوى {customer.tier}
                     </div>
@@ -205,64 +207,83 @@ export const CustomerAccountModal: React.FC<Props> = ({
             </>
           )}
 
-          {/* ---- sign in with phone ---- */}
+          {/* ---- customer PIN login / registration ---- */}
           {!customer && customerLoginEnabled && (
             <div className="p-3.5 bg-stone-50 border border-stone-200 rounded-2xl space-y-3">
               <h3 className="font-black text-stone-900 flex items-center gap-1.5">
                 <Award className="w-4 h-4 text-amber-500" />
-                سجّل دخولك لتجميع نقاط الولاء وعرض طلباتك
+                {authMode === 'login' ? 'دخول حسابك ونقاط الولاء' : 'إنشاء حساب زبون جديد'}
               </h3>
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => { setAuthMode('login'); setMsg(null); }} className={`py-2 rounded-lg font-bold ${authMode === 'login' ? 'bg-stone-900 text-white' : 'border border-stone-300 text-stone-700'}`}>تسجيل الدخول</button>
+                <button onClick={() => { setAuthMode('register'); setMsg(null); }} className={`py-2 rounded-lg font-bold ${authMode === 'register' ? 'bg-stone-900 text-white' : 'border border-stone-300 text-stone-700'}`}>حساب جديد</button>
+              </div>
+              {authMode === 'register' && (
+                <div className="relative">
+                  <User className="w-4 h-4 text-stone-400 absolute right-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    autoComplete="name"
+                    maxLength={60}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="الاسم الكامل"
+                    className={`${inputCls} pr-9`}
+                    data-testid="customer-name"
+                  />
+                </div>
+              )}
               <div className="relative">
                 <Phone className="w-4 h-4 text-stone-400 absolute right-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="tel"
                   dir="ltr"
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
+                  onChange={(e) => setPhone(toAsciiDigits(e.target.value))}
                   placeholder="0593965358"
-                  disabled={codeSent}
                   className={`${inputCls} pr-3 pl-9 text-right`}
                   data-testid="login-phone"
                 />
               </div>
-              {!codeSent ? (
-                <button onClick={sendCode} disabled={busy || phone.trim().length < 9} className="w-full py-2.5 bg-stone-900 text-white font-bold rounded-xl disabled:opacity-40" data-testid="send-code">
-                  {busy ? 'جاري الإرسال...' : 'إرسال رمز التحقق'}
-                </button>
-              ) : (
-                <>
-                  <div className="relative">
-                    <KeyRound className="w-4 h-4 text-stone-400 absolute right-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      dir="ltr"
-                      autoComplete="one-time-code"
-                      value={code}
-                      onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-                      placeholder="رمز التحقق"
-                      className={`${inputCls} pr-3 pl-9 text-right`}
-                      data-testid="login-code"
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={verify} disabled={busy || code.length < 4} className="flex-1 py-2.5 bg-emerald-600 text-white font-bold rounded-xl disabled:opacity-40 flex items-center justify-center gap-1" data-testid="verify-code">
-                      <CheckCircle2 className="w-4 h-4" />
-                      تأكيد
-                    </button>
-                    <button
-                      onClick={() => {
-                        setCodeSent(false);
-                        setCode('');
-                        setMsg(null);
-                      }}
-                      className="px-3 py-2.5 border border-stone-300 text-stone-700 font-bold rounded-xl"
-                    >
-                      تغيير الرقم
-                    </button>
-                  </div>
-                </>
+              <div className="relative">
+                <KeyRound className="w-4 h-4 text-stone-400 absolute right-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  dir="ltr"
+                  autoComplete={authMode === 'register' ? 'new-password' : 'current-password'}
+                  value={pin}
+                  onChange={(e) => setPin(toAsciiDigits(e.target.value).replace(/\D/g, '').slice(0, 6))}
+                  placeholder="PIN من 6 أرقام"
+                  className={`${inputCls} pr-3 pl-9 text-right`}
+                  data-testid="customer-pin"
+                />
+              </div>
+              {authMode === 'register' && (
+                <div className="relative">
+                  <KeyRound className="w-4 h-4 text-stone-400 absolute right-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    dir="ltr"
+                    autoComplete="new-password"
+                    value={confirmPin}
+                    onChange={(e) => setConfirmPin(toAsciiDigits(e.target.value).replace(/\D/g, '').slice(0, 6))}
+                    placeholder="تأكيد PIN"
+                    className={`${inputCls} pr-3 pl-9 text-right`}
+                    data-testid="customer-pin-confirm"
+                  />
+                </div>
               )}
+              <p className="text-[10px] leading-relaxed text-stone-500">{authMode === 'register' ? 'اختر PIN من 6 أرقام واحفظه؛ ستحتاجه مع رقم جوالك للدخول لاحقاً.' : 'أدخل رقم جوالك وPIN الذي اخترته عند إنشاء الحساب.'}</p>
+              <button
+                onClick={authenticate}
+                disabled={busy || phone.trim().length < 9 || pin.length !== 6 || (authMode === 'register' && (name.trim().length < 2 || confirmPin.length !== 6))}
+                className="w-full py-2.5 bg-stone-900 text-white font-bold rounded-xl disabled:opacity-40"
+                data-testid={authMode === 'login' ? 'customer-login' : 'customer-register'}
+              >
+                {busy ? 'جارٍ التحقق...' : authMode === 'login' ? 'دخول الحساب' : 'إنشاء الحساب'}
+              </button>
             </div>
           )}
 

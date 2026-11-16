@@ -10,7 +10,7 @@ interface AdminLoginModalProps {
 
 export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ isOpen, onClose, onLoginSuccess }) => {
   // First run (no accounts yet): the owner creates their own credentials. Nothing is pre-filled or suggested.
-  const [status, setStatus] = useState<{ hasUsers: boolean; setupEnabled: boolean; verificationAvailable: boolean; customerLoginEnabled: boolean } | null>(null);
+  const [status, setStatus] = useState<{ hasUsers: boolean; setupCodeRequired: boolean; verificationAvailable: boolean; customerLoginEnabled: boolean } | null>(null);
   const [statusError, setStatusError] = useState('');
   const isSetup = status ? !status.hasUsers : false;
   const [setupCode, setSetupCode] = useState('');
@@ -98,14 +98,11 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ isOpen, onClos
             <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 rounded-xl font-medium">{statusError}</div>
           )}
           {!status && !statusError && <p className="text-[11px] text-stone-500">جاري الاتصال بالخادم...</p>}
-          {isSetup && !status?.setupEnabled && (
-            <div className="p-2.5 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl text-[11px] leading-relaxed">
-              لإنشاء حساب المدير أضف متغير البيئة <code className="font-mono font-bold">ADMIN_SETUP_CODE</code> في إعدادات Netlify (Site configuration ← Environment variables)، ثم أعد نشر الموقع.
-            </div>
-          )}
-          {isSetup && status?.setupEnabled && (
+          {isSetup && (
             <p className="text-[11px] text-stone-600 leading-relaxed">
-              لا يوجد حساب إدارة بعد. أدخل رمز الإعداد الذي ضبطته في Netlify، ثم اختر اسم مستخدم وكلمة مرور قوية.
+              {status?.setupCodeRequired
+                ? 'أدخل رمز الحماية الذي أعددته في Netlify، ثم اختر اسم مستخدم وكلمة مرور قوية لإنشاء حساب المالك.'
+                : 'لا يوجد حساب إدارة بعد. اختر اسم مستخدم وكلمة مرور قوية لإنشاء حساب المالك.'}
             </p>
           )}
 
@@ -134,9 +131,9 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ isOpen, onClos
             </div>
           </div>
 
-          {isSetup && (
+          {isSetup && status?.setupCodeRequired && (
             <div>
-              <label className="block text-stone-700 font-bold mb-1">رمز الإعداد (ADMIN_SETUP_CODE):</label>
+              <label className="block text-stone-700 font-bold mb-1">رمز الحماية الإضافي:</label>
               <input
                 type="password"
                 required
@@ -204,7 +201,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ isOpen, onClos
 
           <button
             type="submit"
-            disabled={isLoading || locked || !status || (isSetup && !status.setupEnabled)}
+            disabled={isLoading || locked || !status}
             className="w-full bg-[#E61C24] hover:bg-[#cf151c] disabled:bg-stone-300 text-white py-2.5 rounded-xl font-bold transition-all shadow-md active:scale-95 flex items-center justify-center gap-1.5"
           >
             <ShieldCheck className="w-4 h-4" />

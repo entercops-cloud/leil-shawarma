@@ -46,7 +46,6 @@ interface SiteCustomizerModalProps {
   onClose: () => void;
   customization: SiteCustomization;
   onSaveCustomization: (newCustomization: SiteCustomization) => void;
-  customerVerificationAvailable?: boolean;
   onResetCustomization: () => void;
   onOpenMediaLibrary: () => void;
 }
@@ -139,7 +138,6 @@ export const SiteCustomizerModal: React.FC<SiteCustomizerModalProps> = ({
   onClose,
   customization,
   onSaveCustomization,
-  customerVerificationAvailable = false,
   onResetCustomization,
   onOpenMediaLibrary,
 }) => {
@@ -1544,11 +1542,9 @@ export const SiteCustomizerModal: React.FC<SiteCustomizerModalProps> = ({
                     <input type="checkbox" checked={formState.loyalty.enabled} onChange={(e) => setFormState((prev) => ({ ...prev, loyalty: { ...prev.loyalty, enabled: e.target.checked } }))} className="w-4 h-4 accent-red-600" />
                     <span>تفعيل حسابات الزبائن ونقاط الولاء</span>
                   </label>
-                  {!customerVerificationAvailable && (
-                    <p className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded-xl p-2.5 leading-relaxed">
-                      لا توجد حالياً وسيلة تحقق من رقم الجوال مفعّلة على الخادم، فتبقى هذه الميزة متوقفة ولا تظهر للزبائن حتى لو فعّلتَ المفتاح. الزبائن يطلبون كضيوف ويتتبعون طلباتهم برقم الطلب ورقم الجوال.
-                    </p>
-                  )}
+                  <p className="text-[11px] text-stone-600 bg-white border border-stone-200 rounded-xl p-2.5 leading-relaxed">
+                    يدخل الزبون باسمه ورقم جواله ويختار PIN من 6 أرقام. تُحفظ النقاط على الخادم وتُربط بالطلبات عند استخدام رقم الجوال نفسه.
+                  </p>
                   <p className="text-[11px] text-stone-500">عند إيقاف المفتاح تختفي كل عناصر النقاط وتسجيل الزبائن من الموقع.</p>
                   <div className={formState.loyalty.enabled ? "space-y-3" : "space-y-3 opacity-50 pointer-events-none"}>
 
