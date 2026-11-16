@@ -98,7 +98,7 @@ export const DEFAULT_SITE_CUSTOMIZATION: SiteCustomization = {
     walletInstructions: 'بعد تأكيد الطلب سنرسل لك تعليمات التحويل على واتساب، ويبدأ التحضير بعد وصول المبلغ.',
   },
   loyalty: {
-    enabled: false, // customer accounts & loyalty points: off until the owner switches them on
+    enabled: true, // customer accounts & loyalty points are available by default; the owner can switch them off
     pointsPerShekel: 1,
     awardOn: 'completed',
     includeDeliveryFee: false,

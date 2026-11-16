@@ -17,7 +17,7 @@ export interface Store {
   list(prefix: string): Promise<string[]>;
 }
 
-/** Optional phone-verification provider. Without one, customer accounts and loyalty points stay unavailable. */
+/** Optional SMS provider retained for installations that still use phone verification. */
 export interface OtpProvider {
   start(phoneE164: string): Promise<void>;
   check(phoneE164: string, code: string): Promise<boolean>;
@@ -55,6 +55,8 @@ interface CustomerRec {
   tier: string;
   createdAt: string;
   lastLogin?: string;
+  pinSalt?: string;
+  pinHash?: string;
   tv: number;
 }
 
@@ -175,9 +177,13 @@ const publicUser = (u: UserRec) => ({ id: u.id, username: u.username, displayNam
 const managedUser = (u: UserRec) => ({ ...publicUser(u), createdAt: u.createdAt, lastLogin: u.lastLogin, disabled: !!u.disabled });
 
 // ---------- phone numbers ----------
+const asciiDigits = (value: unknown) => String(value ?? '')
+  .replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 0x0660))
+  .replace(/[۰-۹]/g, (digit) => String(digit.charCodeAt(0) - 0x06f0));
+
 /** Returns digits like "970593965358" for Palestinian mobiles (+970 / +972 prefixes), or null. */
 function normalizePhone(raw: unknown): string | null {
-  let p = String(raw ?? '').replace(/[\s\-().]/g, '');
+  let p = asciiDigits(raw).replace(/[\s\-().]/g, '');
   if (p.startsWith('00')) p = '+' + p.slice(2);
   if (/^0\d{9}$/.test(p)) p = '+970' + p.slice(1); // 0593965358 -> +970593965358
   else if (/^970\d{9}$/.test(p) || /^972\d{9}$/.test(p)) p = '+' + p;
@@ -352,7 +358,7 @@ function priceItems(rawItems: any, menu: any[], offers: any[], now: number): Pri
       }
       unit = Number(offer.discountedPrice);
       stored = { ...meal, name: `${meal.name} [${offer.badge}]`, price: unit };
-      options = { size: 'عرض خاص', bread: meal.options?.breads?.[0] || 'خبز صاج', extras: [], removals: [], notes: cleanText(o.notes, 200), unitPrice: unit };
+      options = { size: 'عرض خاص', bread: Array.isArray(meal.options?.breads) && meal.options.breads.length > 0 ? String(meal.options.breads[0]) : undefined, extras: [], removals: [], notes: cleanText(o.notes, 200), unitPrice: unit };
     } else {
       unit = Number(meal.price);
       const size = o.size ? String(o.size) : undefined;
@@ -367,8 +373,24 @@ function priceItems(rawItems: any, menu: any[], offers: any[], now: number): Pri
         if (!ext) return { items: [], subtotal: 0, error: 'إضافة غير صالحة.' };
         unit += Number(ext.price) || 0;
       }
-      const bread = o.bread ? String(o.bread) : undefined;
-      if (bread && !(meal.options?.breads ?? []).includes(bread)) return { items: [], subtotal: 0, error: 'نوع الخبز غير صالح.' };
+      const availableBreads: string[] = Array.isArray(meal.options?.breads)
+        ? meal.options.breads.map(String)
+        : [];
+      const requestedBread = o.bread ? String(o.bread) : undefined;
+
+      if (
+        requestedBread &&
+        availableBreads.length > 0 &&
+        !availableBreads.includes(requestedBread)
+      ) {
+        return { items: [], subtotal: 0, error: 'نوع الخبز غير صالح.' };
+      }
+
+      // Items without bread options ignore stale/default bread values from the browser
+      const bread =
+        requestedBread && availableBreads.includes(requestedBread)
+          ? requestedBread
+          : undefined;
       const removals: string[] = Array.isArray(o.removals) ? o.removals.map(String).slice(0, 20) : [];
       options = { size, bread, extras, removals, notes: cleanText(o.notes, 200), unitPrice: unit };
       stored = meal;
@@ -469,9 +491,9 @@ async function route(req: Request, d: Deps, out: Out): Promise<Response> {
     const loyaltyOn = !!(await d.site.getJSON<any>('content'))?.customization?.loyalty?.enabled;
     return json({
       hasUsers: users.length > 0,
-      setupEnabled: !!d.env.ADMIN_SETUP_CODE,
-      verificationAvailable: !!d.otp, // is a phone-verification method connected at all?
-      customerLoginEnabled: !!d.otp && loyaltyOn, // available AND switched on by the owner
+      setupCodeRequired: !!d.env.ADMIN_SETUP_CODE,
+      verificationAvailable: true, // customers use their server-checked PIN
+      customerLoginEnabled: loyaltyOn,
     });
   }
 
@@ -508,9 +530,70 @@ async function route(req: Request, d: Deps, out: Out): Promise<Response> {
     return json({ review });
   }
 
-  // ----- customer accounts (phone verification) -----
-  // Off unless a verification method is connected AND the owner switched "customer accounts & loyalty points" on.
-  const accountsOn = async () => !!d.otp && !!(await d.site.getJSON<any>('content'))?.customization?.loyalty?.enabled;
+  // ----- customer accounts (phone + customer PIN) -----
+  // PIN login is available when the owner has enabled customer accounts and loyalty.
+  const accountsOn = async () => !!(await d.site.getJSON<any>('content'))?.customization?.loyalty?.enabled;
+
+  if (method === 'POST' && path === '/customer/pin') {
+    if (!(await accountsOn())) return err(503, 'تسجيل الزبائن غير مفعّل حالياً.');
+    const phone = normalizePhone(body?.phone);
+    const mode = body?.mode === 'register' ? 'register' : body?.mode === 'login' ? 'login' : '';
+    const pin = asciiDigits(body?.pin);
+    const name = cleanText(body?.name, 60);
+    if (!phone || !mode || !/^\d{6}$/.test(pin) || (mode === 'register' && name.length < 2)) {
+      return err(400, 'أدخل رقم جوال صحيحاً ورقم PIN من 6 أرقام، وأدخل اسمك عند إنشاء الحساب.');
+    }
+    if (mode === 'register' && new Set(['000000', '111111', '123456', '654321', '123123', '121212']).has(pin)) {
+      return err(400, 'اختر PIN مختلفاً عن الأرقام المتكررة أو المتسلسلة.');
+    }
+
+    if (mode === 'register') {
+      const ipWait = await rateLimit(d, `rl:customer-pin-reg-ip:${ip}`, 10, 60 * 60_000);
+      const phoneWait = await rateLimit(d, `rl:customer-pin-reg-phone:${phone}`, 3, 60 * 60_000);
+      if (ipWait > 0 || phoneWait > 0) return err(429, 'محاولات إنشاء الحساب كثيرة. حاول لاحقاً.', { retryAfter: Math.max(ipWait, phoneWait) });
+    }
+
+    const phoneKey = `rl:customer-pin:${phone}`;
+    const customerIpKey = `rl:customer-pin-ip:${ip}`;
+    const lockKeys = [customerIpKey, phoneKey];
+    const wait = await checkLocks(d, lockKeys);
+    if (wait > 0) return err(429, 'محاولات كثيرة. حاول لاحقاً.', { retryAfter: wait });
+
+    let c = await loadCustomer(d, phone);
+    if (mode === 'register') {
+      if (c?.pinHash) return err(409, 'يوجد حساب بهذا الرقم. اختر تسجيل الدخول.');
+      if (!c) {
+        c = {
+          phone,
+          points: 0,
+          totalSpent: 0,
+          ordersCount: 0,
+          tier: 'عادي',
+          createdAt: new Date(now).toISOString(),
+          tv: 1,
+        };
+      }
+      c.name = name;
+      c.pinSalt = randomBytes(16).toString('hex');
+      c.pinHash = await hashPassword(pin, c.pinSalt);
+      c.tv = c.tv || 1;
+    } else {
+      const salt = c?.pinSalt ?? '00'.repeat(16);
+      const candidate = await hashPassword(pin, salt);
+      if (!c?.pinHash || !c.pinSalt || !safeEq(candidate, c.pinHash)) {
+        await registerFail(d, customerIpKey, 15 * 60_000);
+        await registerFail(d, phoneKey, 15 * 60_000);
+        const retryAfter = await checkLocks(d, lockKeys);
+        return err(401, 'رقم الجوال أو PIN غير صحيح.', retryAfter > 0 ? { retryAfter } : {});
+      }
+    }
+
+    c.lastLogin = new Date(now).toISOString();
+    await saveCustomer(d, c);
+    await clearLocks(d, lockKeys);
+    await issueCustomerCookie(c);
+    return json({ customer: publicCustomer(c) });
+  }
 
   if (method === 'POST' && path === '/customer/otp/start') {
     if (!d.otp || !(await accountsOn())) return err(503, 'تسجيل الزبائن غير مفعّل حالياً.');
@@ -683,10 +766,9 @@ async function route(req: Request, d: Deps, out: Out): Promise<Response> {
   if (method === 'POST' && path === '/setup') {
     const users = (await d.site.getJSON<UserRec[]>('users')) ?? [];
     if (users.length > 0) return err(409, 'تم إعداد حساب المدير مسبقاً.');
-    if (!d.env.ADMIN_SETUP_CODE) return err(503, 'لم يتم ضبط ADMIN_SETUP_CODE في إعدادات Netlify بعد.');
     const wait = await checkLocks(d, [ipKey]);
     if (wait > 0) return err(429, 'محاولات كثيرة. حاول لاحقاً.', { retryAfter: wait });
-    if (typeof body?.setupCode !== 'string' || !safeEq(body.setupCode, d.env.ADMIN_SETUP_CODE)) {
+    if (d.env.ADMIN_SETUP_CODE && (typeof body?.setupCode !== 'string' || !safeEq(body.setupCode, d.env.ADMIN_SETUP_CODE))) {
       await registerFail(d, ipKey, 15 * 60_000);
       return err(403, 'رمز الإعداد غير صحيح.');
     }
