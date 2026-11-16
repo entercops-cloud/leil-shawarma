@@ -29,8 +29,7 @@ export default async (req: Request, context: Context): Promise<Response> =>
     site: blobStore('leil-site'),
     media: blobStore('leil-media'),
     env: { ADMIN_SETUP_CODE: process.env.ADMIN_SETUP_CODE },
-    // No phone-verification provider is connected, so customer accounts / loyalty points stay unavailable.
-    // To add one later, pass an object with start(phone) / check(phone, code) here as `otp`.
+    // Customer sign-in uses a PIN stored as a server-side scrypt hash. SMS remains optional.
     otp: undefined,
     ip: context.ip || req.headers.get('x-nf-client-connection-ip') || 'unknown',
   });
